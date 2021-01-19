@@ -12,17 +12,12 @@ roamhusk.addDays = (date, days) => {
 
 roamhusk.randomFromInterval = (min, max) => Math.random() * (max - min) + min;
 
-roamhusk.schedule = (node, signal) => {
-  const newParams = roamhusk.getNewParameters(node, signal);
-
-  const currentDate = new Date();
-  return node
-    .withInterval(newParams.interval)
-    .withFactor(newParams.factor)
-    .withDate(addDays(currentDate, Math.ceil(newParams.interval)));
-};
-
 roamhusk.getNewParameters = (node, signal) => {
+  // skipping card with 0
+  if (signal === 0) {
+    return node;
+  }
+
   const factor = node.factor || roamhusk.defaultFactor;
   const interval = node.interval || roamhusk.defaultInterval;
 
@@ -611,9 +606,9 @@ roamhusk.load = () => {
 roamhusk.load();
 
 roamhusk.turnOnCss = () => {
-  roamhusk.styleSheet.insertRule(".zoom-path-view { display: none; }", 0);
+  roamhusk.styleSheet.insertRule(".roam-body-main .zoom-path-view { display: none; }", 0);
   roamhusk.styleSheet.insertRule(
-    `[data-link-title^="[[interval]]:"], [data-link-title^="[[factor]]:"] {
+    `.roam-body-main [data-link-title^="[[interval]]:"], [data-link-title^="[[factor]]:"] {
     display: none;
 }`,
     1
@@ -623,7 +618,7 @@ roamhusk.turnOnCss = () => {
     2
   );
   roamhusk.styleSheet.insertRule(
-    `[data-link-title^="January"], [data-link-title^="February"], [data-link-title^="March"], [data-link-title^="April"], [data-link-title^="May"], [data-link-title^="June"], [data-link-title^="July"], [data-link-title^="August"], [data-link-title^="September"], [data-link-title^="October"], [data-link-title^="November"], [data-link-title^="December"] {
+    `.roam-body-main [data-link-title^="January"], [data-link-title^="February"], [data-link-title^="March"], [data-link-title^="April"], [data-link-title^="May"], [data-link-title^="June"], [data-link-title^="July"], [data-link-title^="August"], [data-link-title^="September"], [data-link-title^="October"], [data-link-title^="November"], [data-link-title^="December"] {
     display: none;
 }`,
     3
@@ -696,6 +691,9 @@ roamhusk.getSortedDueCards = () => {
   let todaysCards = [];
   const overdueCards = Object.values(roamhusk.nodes)
     .filter(x => {
+      if (x.blocked) {
+        return false;
+      }
       if (roamhusk.sameDay(new Date(x.due), today)) {
         todaysCards.push(x);
         return false;
@@ -724,7 +722,7 @@ roamhusk.showCard = () => {
 
   if (!roamhusk.showAnswer) {
     roamhusk.styleSheet.insertRule(
-      `.roam-block-container>.rm-block-children { font-size: 0px }`,
+      `.roam-body-main .roam-block-container>.rm-block-children { font-size: 0px }`,
       4
     );
     // document.querySelector(".bp3-button + div").innerText =
@@ -813,17 +811,36 @@ roamhusk.processKey = e => {
   if (e.keyCode === 32 && !roamhusk.showAnswer) {
     roamhusk.showAnswer = true;
     roamhusk.showCard();
-  } else if (e.key === "1" || e.key === "2" || e.key === "3" || e.key === "4") {
+  } else if (
+    e.key === "1" ||
+    e.key === "2" ||
+    e.key === "3" ||
+    e.key === "4" ||
+    e.key === "0" ||
+    e.key === "b"
+  ) {
     const uid = roamhusk.cardsToReview[roamhusk.currentCard].uid;
     console.log(roamhusk.nodes[uid]);
-    roamhusk.nodes[uid] = roamhusk.enforceLimits(
-      roamhusk.addJitter(
-        roamhusk.getNewParameters(roamhusk.nodes[uid], parseInt(e.key, 10))
-      )
-    );
+
+    // disable card (block)
+    if (e.key === "b") {
+      roamhusk.nodes[uid] = { ...roamhusk.nodes[uid], blocked: true };
+    } else {
+      // process difficulty rating
+      roamhusk.nodes[uid] = roamhusk.enforceLimits(
+        roamhusk.addJitter(
+          roamhusk.getNewParameters(roamhusk.nodes[uid], parseInt(e.key, 10))
+        )
+      );
+    }
+
     console.log(roamhusk.nodes[uid], parseInt(e.key, 10));
     roamhusk.save();
     roamhusk.currentCard += 1;
+    if (roamhusk.currentCard === roamhusk.cardsToReview.length) {
+      console.log("All cards due reviewed");
+      roamhusk.wrapUp();
+    }
     roamhusk.showAnswer = false;
     roamhusk.showCard();
   } else if (e.key === "x") {
