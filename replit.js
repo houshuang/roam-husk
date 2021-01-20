@@ -706,7 +706,7 @@ roamhusk.getSortedDueCards = () => {
         return true;
       }
     })
-    .filter(x => x.due > today);
+    .filter(x => new Date(x.due) < today);
   console.groupCollapsed("Today's cards");
   todaysCards.forEach(x => console.log(roamhusk.formatNode(x)));
   console.groupEnd();
