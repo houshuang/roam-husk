@@ -142,9 +142,11 @@ roamhusk.hardFactor = 1.2;
 roamhusk.jitterPercentage = 0.05;
 
 roamhusk.clearCss = () => {
-  new Array(roamhusk.styleSheet.rules.length)
-    .fill("")
-    .forEach(() => roamhusk.styleSheet.deleteRule(0));
+  try {
+    new Array(roamhusk.styleSheet.rules.length)
+      .fill("")
+      .forEach(() => roamhusk.styleSheet.deleteRule(0));
+  } catch (e) {}
 };
 
 // create a custom stylesheet
@@ -606,7 +608,10 @@ roamhusk.load = () => {
 roamhusk.load();
 
 roamhusk.turnOnCss = () => {
-  roamhusk.styleSheet.insertRule(".roam-body-main .zoom-path-view { display: none; }", 0);
+  roamhusk.styleSheet.insertRule(
+    ".roam-body-main .zoom-path-view { display: none; }",
+    0
+  );
   roamhusk.styleSheet.insertRule(
     `.roam-body-main [data-link-title^="[[interval]]:"], [data-link-title^="[[factor]]:"] {
     display: none;
@@ -808,6 +813,12 @@ roamhusk.wrapUp = () => {
 };
 
 roamhusk.processKey = e => {
+  if (document.querySelector("textarea")) {
+    console.log(
+      "Actively editing a block, so don't process keystrokes as shortcuts"
+    );
+    return;
+  }
   if (e.keyCode === 32 && !roamhusk.showAnswer) {
     roamhusk.showAnswer = true;
     roamhusk.showCard();
