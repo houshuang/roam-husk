@@ -735,6 +735,11 @@ roamhusk.showCard = () => {
   } else {
     // document.querySelector(".bp3-button + div").innerText =
     //   "Roam Husk Review Session -- <x> to exit, <SPC> to flip, <1-4> to answer";
+    
+    // click all cloze hidden selectors
+    document
+      .querySelectorAll(".bp3-popover-target .rm-block__part--equals")
+      .forEach(x => x.click());
   }
 
   roamhusk.goToUid(roamhusk.cardsToReview[roamhusk.currentCard].uid);
