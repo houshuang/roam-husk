@@ -1,8 +1,56 @@
 console.log("Loading roam-husk.js.");
 
+// waitForElm = selector => {
+//  return new Promise(resolve => {
+//    if (document.querySelector(selector)) {
+//      return resolve(document.querySelector(selector));
+//    }
+
+//    const observer = new MutationObserver(mutations => {
+//      if (document.querySelector(selector)) {
+//        resolve(document.querySelector(selector));
+//        observer.disconnect();
+//      }
+//    });
+
+//    observer.observe(document.body, {
+//      childList: true,
+//      subtree: true
+//    });
+//  });
+// };
+
 if (!window.roamhusk) {
   window.roamhusk = {};
 }
+
+// reads a setting attribute from graph, also converts booleans
+roamhusk.getSetting = settingTitle => {
+  let setting = roamAlphaAPI.q(
+    `[:find (pull ?question [:block/uid :block/string]) :where [?question :block/refs ?srPage] [?srPage :node/title "roam/husk/${settingTitle}"] ]`
+  );
+  let settingValue =
+    setting &&
+    setting[0] &&
+    setting[0][0] &&
+    setting[0][0].string.split("::") &&
+    setting[0][0].string.split("::")[1].trim();
+  if (
+    settingValue === "true" ||
+    settingValue === "True" ||
+    settingValue === "1"
+  ) {
+    return true;
+  }
+  if (
+    settingValue === "false" ||
+    settingValue === "False" ||
+    settingValue === "0"
+  ) {
+    return false;
+  }
+  return settingValue;
+};
 
 roamhusk.addDays = (date, days) => {
   const result = new Date(date);
@@ -140,6 +188,25 @@ roamhusk.maxInterval = 50 * 365;
 roamhusk.minFactor = 1.3;
 roamhusk.hardFactor = 1.2;
 roamhusk.jitterPercentage = 0.05;
+roamhusk.active = false;
+
+roamhusk.getParamsFromGraph = () => {
+  roamhusk.defaultHidePath = roamhusk.getSetting("defaultHidePath");
+  roamhusk.hidePathTag = roamhusk.getSetting("hidePathTag") || "sr";
+  roamhusk.showPathTag = roamhusk.getSetting("showPathTag") || "srt";
+  roamhusk.answerPathTag = roamhusk.getSetting("answerPathTag") || "sra";
+  roamhusk.defaultAnswer = roamhusk.getSetting("defaultAnswer") || "3";
+  roamhusk.includeRoamToolkit = roamhusk.getSetting("includeRoamToolkit");
+
+  console.log("Settings", {
+    defaultHidePath: roamhusk.defaultHidePath,
+    hidePathTag: roamhusk.hidePathTag,
+    showPathTag: roamhusk.showPathTag,
+    answerPathTag: roamhusk.answerPathTag,
+    includeRoamToolkit: roamhusk.includeRoamToolkit,
+    defaultAnswer: roamhusk.defaultAnswer
+  });
+};
 
 roamhusk.clearCss = () => {
   try {
@@ -180,12 +247,11 @@ roamhusk.parseNodes = nodes => {
   if (!roamhusk.nodes) {
     roamhusk.nodes = {};
   }
-  const newNodes = {};
+  const newNodes = { ...roamhusk.nodes };
+  Object.keys(newNodes).forEach(x => {
+    newNodes[x].disabled = true;
+  });
   nodes.forEach(node => {
-    if (roamhusk.nodes[node[0]]) {
-      newNodes[node[0]] = roamhusk.nodes[node[0]];
-      return;
-    }
     let str = node[1];
     const rawInterval = str.match(/\[\[\[\[interval\]\]\:(.+?)\]\]/);
     const rawFactor = str.match(/\[\[\[\[factor\]\]\:(.+?)\]\]/);
@@ -198,7 +264,11 @@ roamhusk.parseNodes = nodes => {
     if (str.match("Elin") || str.match("David")) {
       return;
     }
-    if (rawInterval && rawFactor && rawDate) {
+    // preserve existing metadata
+    if (roamhusk.nodes[node[0]]) {
+      newNodes[node[0]].disabled = false;
+      newNodes[node[0]].string = str;
+    } else if (rawInterval && rawFactor && rawDate) {
       newNodes[node[0]] = {
         interval: parseFloat(rawInterval[1]),
         factor: parseFloat(rawFactor[1]),
@@ -219,46 +289,11 @@ roamhusk.parseNodes = nodes => {
   roamhusk.nodes = { ...newNodes };
 };
 
-// --- Variables ---
-roamhusk.prompts = {};
-roamhusk.promptCounter = -1;
-roamhusk.mode = false;
-roamhusk.deltaRegex = /[0-9]+(?=\+0\}\})/g;
-
-// Remove element by id
-roamhusk.removeId = id => {
-  let element = document.getElementById(id);
-  if (element) element.remove();
-};
-
-// Add element to target
-roamhusk.addElement = (element, target) => {
-  if (element.id) roamhusk.removeId(element.id);
-  target.appendChild(element);
-};
-
-// simulateClick by Viktor Tabori
-roamhusk.simulateClick = (element, opts) => {
-  events = ["mousehover", "mousedown", "click", "mouseup"];
-  setTimeout(function() {
-    events.forEach(function(type) {
-      var _event = new MouseEvent(type, {
-        view: window,
-        bubbles: true,
-        cancelable: true,
-        buttons: 1,
-        ...opts
-      });
-      _event.simulated = true;
-      element.dispatchEvent(_event);
-    });
-  }, 0);
-};
-
 // --- Testing routine ---
 var scriptUrl = document.currentScript.src;
 var scriptId = document.currentScript.id;
 roamhusk.testingReload = () => {
+  roamhusk.wrapUp();
   document.removeEventListener("keyup", roamhusk.processKey);
   try {
     roamhusk.removeId(scriptId);
@@ -303,248 +338,6 @@ roamhusk.goToUid = uid => {
   location.assign(url);
 };
 
-// Show/hide block/refs (Cloze deletion)
-roamhusk.showBlockRefs = show => {
-  document.querySelectorAll(".rm-block-ref").forEach(blockref => {
-    blockref.classList.toggle("rm-block-ref-show", show);
-  });
-};
-
-// Click away
-roamhusk.focusMain = () => {
-  roamhusk.simulateClick(document.querySelector(".roam-main"));
-};
-
-// Update the content of the main block
-roamhusk.changeQuestionBlockContent = async transform => {
-  roamhusk.simulateClick(document.querySelector(".rm-block-main .roam-block"));
-  await roamhusk.sleep();
-  var txtarea = document.activeElement;
-  txtarea.readOnly = true;
-  var setValue = Object.getOwnPropertyDescriptor(
-    window.HTMLTextAreaElement.prototype,
-    "value"
-  ).set;
-  setValue.call(txtarea, transform(txtarea.value));
-  var e = new Event("input", { bubbles: true });
-  txtarea.readOnly = true;
-  txtarea.dispatchEvent(e);
-  txtarea.readOnly = true;
-  await roamhusk.sleep();
-  roamhusk.focusMain();
-};
-
-// Check [[h]] tag
-roamhusk.checkhTag = async () => {
-  // Find [[h]] pages id
-  let query = window.roamAlphaAPI.q(
-    '[:find (pull ?hpage [*]) :where [?hpage :node/title "h"] [?question :block/uid "' +
-      roamhusk.prompts[roamhusk.promptCounter][0].uid +
-      '"] [?question :block/refs ?hpage]]'
-  );
-  if (query.length == 0) {
-    await roamhusk.changeQuestionBlockContent(text =>
-      text.replace(/(\{\{\[\[âˆ†)/g, "#h $1")
-    );
-  }
-};
-
-// --- Spaced repetition ---
-// Get current interval
-roamhusk.getInterval = () => {
-  var interval = roamhusk.prompts[roamhusk.promptCounter][0].string.match(
-    roamhusk.deltaRegex
-  );
-  if (interval && interval.length != 0) return parseInt(interval[0]);
-  else return 0;
-};
-
-roamhusk.getIntervalHumanReadable = n => {
-  if (n == -1) return "<10 min";
-  else if (n > 0 && n <= 15) return n + " d";
-  else if (n <= 30) return (n / 7).toFixed(1) + " w";
-  else if (n <= 365) return (n / 30).toFixed(1) + " m";
-};
-
-// --- Main functions ---
-
-// Go to next prompt
-roamhusk.goToNextPrompt = async () => {
-  // Bump counter
-  roamhusk.promptCounter += 1;
-
-  // Update widget
-  roamhusk.counterWidget();
-
-  var doStuff = async () => {
-    roamhusk.goToUid(roamhusk.prompts[roamhusk.promptCounter][0].uid);
-    await roamhusk.sleep();
-    roamhusk.showBlockRefs(false); // Cloze deletion
-    roamhusk.addCustomElements();
-  };
-
-  // Force redirect to next prompt - NO DISTRACTIONS!
-  window.onhashchange = doStuff;
-
-  // Go to the next prompt
-  await doStuff();
-};
-
-// Do funky stuff
-roamhusk.clickAndGo = async yes => {
-  window.onhashchange = async () => {};
-
-  var doStuff = async transform => {
-    await roamhusk.changeQuestionBlockContent(transform);
-    await roamhusk.sleep();
-    roamhusk.simulateClick(document.querySelector(".rm-orbit-tag"), {
-      shiftKey: true
-    });
-    await roamhusk.sleep();
-    await roamhusk.checkhTag();
-  };
-
-  if (yes && roamhusk.promptCounter >= roamhusk.countNewPrompts) {
-    await doStuff(text =>
-      text.replace(roamhusk.deltaRegex, roamhusk.calculateNextInterval(yes))
-    );
-  } else {
-    if (roamhusk.promptCounter < roamhusk.countNewPrompts) {
-      await doStuff(text => text + " {{[[âˆ†]]:0+0}}");
-      roamhusk.countNewPrompts -= 1;
-    }
-
-    roamhusk.prompts.push(roamhusk.prompts[roamhusk.promptCounter]);
-    roamhusk.prompts.splice(roamhusk.promptCounter, 1);
-    roamhusk.promptCounter -= 1;
-  }
-
-  if (!roamhusk.prompts[roamhusk.promptCounter + 1]) {
-    await roamhusk.setMode(false);
-  } else {
-    await roamhusk.goToNextPrompt();
-  }
-};
-
-// Add response area
-roamhusk.addCustomElements = () => {
-  // Find container to add elements
-  var container = document.querySelector(".roam-article");
-
-  var responseArea = Object.assign(document.createElement("div"), {
-    className: "roamhusk-response-area"
-  });
-
-  roamhusk.addElement(responseArea, container);
-
-  // Add "Show answer." button
-  var showAnswerButton = Object.assign(document.createElement("button"), {
-    id: "show-answer-button",
-    innerHTML: "Show answer.",
-    className: "roamhusk-show-answer-button bp3-button"
-  });
-
-  roamhusk.addElement(showAnswerButton, responseArea);
-
-  // Click event on "Show answer." button
-  showAnswerButton.onclick = async () => {
-    // Show answer
-    document.querySelector(".rm-block-children").style.display = "flex";
-
-    showAnswerButton.remove();
-    roamhusk.showBlockRefs(true);
-
-    let responses = roamhusk.settings.responses;
-    var yesButton = Object.assign(document.createElement("button"), {
-      id: "yes-button",
-      innerHTML:
-        responses[2] +
-        "<sup>" +
-        roamhusk.getIntervalHumanReadable(
-          roamhusk.calculateNextInterval(true)
-        ) +
-        "</sup>",
-      className: "roamhusk-yesno-button bp3-button",
-      onclick: () => {
-        responseArea.remove();
-        roamhusk.clickAndGo(true);
-      }
-    });
-
-    var noButton = Object.assign(document.createElement("button"), {
-      id: "no-button",
-      innerHTML:
-        responses[1] +
-        "<sup>" +
-        roamhusk.getIntervalHumanReadable(
-          roamhusk.calculateNextInterval(false)
-        ) +
-        "</sup>",
-      className: "roamhusk-yesno-button bp3-button",
-      onclick: () => {
-        responseArea.remove();
-        roamhusk.clickAndGo(false);
-      }
-    });
-
-    var justLearnedButton = Object.assign(document.createElement("button"), {
-      id: "just-learned-button",
-      innerHTML:
-        responses[0] +
-        "<sup>" +
-        roamhusk.getIntervalHumanReadable(
-          roamhusk.calculateNextInterval(false)
-        ) +
-        "</sup>",
-      className: "roamhusk-yesno-button bp3-button",
-      onclick: () => {
-        responseArea.remove();
-        roamhusk.clickAndGo(false);
-      }
-    });
-
-    if (roamhusk.promptCounter < roamhusk.countNewPrompts) {
-      roamhusk.addElement(justLearnedButton, responseArea);
-    } else {
-      roamhusk.addElement(noButton, responseArea);
-      roamhusk.addElement(yesButton, responseArea);
-    }
-  };
-};
-
-// Number of prompts in the top right
-roamhusk.counterWidget = () => {
-  let isNew = roamhusk.promptCounter < roamhusk.countNewPrompts;
-  let newCount = isNew ? roamhusk.countNewPrompts - roamhusk.promptCounter : 0;
-  let reviewCount =
-    roamhusk.prompts.length - newCount - (isNew ? 0 : roamhusk.promptCounter);
-  let widget = Object.assign(document.createElement("div"), {
-    id: "roamhusk-counter-widget",
-    innerHTML:
-      ` <span style="color:blue;">` +
-      newCount +
-      `</span> ` +
-      `<span style="color:green;">` +
-      reviewCount +
-      `</span>`,
-    className: "roamhusk-counter-widget"
-  });
-  roamhusk.addElement(
-    widget,
-    document.querySelector(".roam-topbar .flex-h-box")
-  );
-};
-
-// Start review session function
-roamhusk.review = async () => {
-  console.log("starting review");
-};
-
-// -----------------------------------------------
-// --- Loading prompts & counting their number ---
-// ------ calling functions directly here! -------
-// -----------------------------------------------
-
 // Adding buttons to the topbar
 var toggleModeButton = Object.assign(document.createElement("div"), {
   id: "roamhusk-review-button",
@@ -571,20 +364,33 @@ roamhusk.addElement(
 
 // Make Alt+D leave review mode
 
-roamhusk.getNodes = () =>
-  window.roamAlphaAPI
+roamhusk.getNodes = () => {
+  let searchTags = [];
+  if (roamhusk.includeRoamToolkit) {
+    searchTags.push("interval");
+  }
+  if (roamhusk.hidePathTag) {
+    searchTags.push(roamhusk.hidePathTag);
+  }
+  if (roamhusk.showPathTag) {
+    searchTags.push(roamhusk.showPathTag);
+  }
+  if (roamhusk.answerPathTag) {
+    searchTags.push(roamhusk.answerPathTag);
+  }
+  let searchQuery = searchTags.map(x => ` [?srPage :node/title "${x}"]`);
+
+  return window.roamAlphaAPI
     .q(
-      '[:find (pull ?question [:block/uid :block/string]) :where [?question :block/refs ?srPage] [?srPage :node/title "interval"] (not-join [?question] [?question :block/refs ?query] [?query :node/title "query"])]'
-    )
-    .concat(
-      window.roamAlphaAPI.q(
-        '[:find (pull ?question [:block/uid :block/string]) :where [?question :block/refs ?srPage] [?srPage :node/title "sr"] (not-join [?question] [?question :block/refs ?query] [?query :node/title "query"])]'
-      )
+      `[:find (pull ?question [:block/uid :block/string]) :where [?question :block/refs ?srPage] (or ${searchQuery})
+      (not-join [?question] [?question :block/refs ?query] [?query :node/title "query"])]`
     )
     .filter(x => x[0].string)
     .map(x => [x[0].uid, x[0].string]);
+};
 
 roamhusk.loadNodes = () => {
+  roamhusk.getParamsFromGraph();
   roamhusk.parseNodes(roamhusk.getNodes());
 };
 
@@ -609,23 +415,23 @@ roamhusk.load();
 
 roamhusk.turnOnCss = () => {
   roamhusk.styleSheet.insertRule(
-    ".roam-body-main .zoom-path-view { display: none; }",
+    `.roam-body-main [data-link-title^="[[interval]]:"], [data-tag="sr"], [data-link-title^="[[factor]]:"] {
+    display: none;
+}`,
     0
   );
   roamhusk.styleSheet.insertRule(
-    `.roam-body-main [data-link-title^="[[interval]]:"], [data-link-title^="[[factor]]:"] {
-    display: none;
-}`,
-    1
-  );
-  roamhusk.styleSheet.insertRule(
     `.roam-main .roam-topbar { background-color: lightblue !important }`,
-    2
+    1
   );
   roamhusk.styleSheet.insertRule(
     `.roam-body-main [data-link-title^="January"], [data-link-title^="February"], [data-link-title^="March"], [data-link-title^="April"], [data-link-title^="May"], [data-link-title^="June"], [data-link-title^="July"], [data-link-title^="August"], [data-link-title^="September"], [data-link-title^="October"], [data-link-title^="November"], [data-link-title^="December"] {
     display: none;
 }`,
+    2
+  );
+  roamhusk.styleSheet.insertRule(
+    ".rm-attr-ref { font-size: 14px !important }",
     3
   );
 
@@ -650,6 +456,7 @@ roamhusk.letsGo = () => {
   roamhusk.loadNodes();
   roamhusk.save();
   roamhusk.getSortedDueCards(roamhusk.nodes);
+  roamhusk.showCard();
 };
 
 roamhusk.sameDay = (d1, d2) => {
@@ -696,7 +503,7 @@ roamhusk.getSortedDueCards = () => {
   let todaysCards = [];
   const overdueCards = Object.values(roamhusk.nodes)
     .filter(x => {
-      if (x.blocked) {
+      if (x.blocked || x.disabled) {
         return false;
       }
       if (roamhusk.sameDay(new Date(x.due), today)) {
@@ -715,34 +522,74 @@ roamhusk.getSortedDueCards = () => {
   overdueCards.forEach(x => console.log(roamhusk.formatNode(x)));
   console.groupEnd();
   roamhusk.cardsToReview = todaysCards.concat(overdueCards);
+  if (roamhusk.cardsToReview.length === 0) {
+    window.alert("No due or overdue cards, come back tomorrow");
+    roamhusk.wrapUp();
+  }
   roamhusk.currentCard = 0;
   roamhusk.showAnswer = false;
-  roamhusk.showCard();
+};
+
+roamhusk.showPathForCard = (card, showAnswer) => {
+  let string = card.string + " ";
+  let showPath =
+    !roamhusk.defaultHidePath ||
+    string.includes("#" + roamhusk.showPathTag + " ") ||
+    (showAnswer && string.includes("#" + roamhusk.answerPathTag + " "));
+  if (string.includes("#" + roamhusk.hidePathTag + " ")) {
+    showPath = false;
+  }
+  return showPath;
 };
 
 roamhusk.showCard = () => {
+  let currentCard = roamhusk.cardsToReview[roamhusk.currentCard];
+
+  // no more cards
+  if (!currentCard) {
+    roamhusk.wrapUp();
+    return;
+  }
+  let showPath = roamhusk.showPathForCard(currentCard, roamhusk.showAnswer);
+  // if always show, or the tag that asks us to show, or answer if the tag that asks to show in answer
+
   try {
+    roamhusk.styleSheet.deleteRule(4);
+    roamhusk.styleSheet.deleteRule(4);
     roamhusk.styleSheet.deleteRule(4);
   } catch (e) {}
 
+  roamhusk.goToUid(roamhusk.cardsToReview[roamhusk.currentCard].uid);
+  if (!showPath) {
+    roamhusk.styleSheet.insertRule(
+      ".roam-body-main .zoom-path-view { display: none; }",
+      4
+    );
+  }
   if (!roamhusk.showAnswer) {
     roamhusk.styleSheet.insertRule(
       `.roam-body-main .roam-block-container>.rm-block-children { font-size: 0px }`,
-      4
+      roamhusk.showPath ? 5 : 4
     );
-    // document.querySelector(".bp3-button + div").innerText =
-    //   "Roam Husk Review Session -- <x> to exit, <1-4> to answer";
+
+    if (roamhusk.cardsToReview[roamhusk.currentCard].string.includes("::")) {
+      roamhusk.styleSheet.insertRule(
+        `.roam-body-main .roam-block-container span { font-size: 0px }`,
+        roamhusk.showPath ? 6 : 5
+      );
+
+      // document.querySelector(".bp3-button + div").innerText =
+      //   "Roam Husk Review Session -- <x> to exit, <1-4> to answer";
+    }
   } else {
     // document.querySelector(".bp3-button + div").innerText =
     //   "Roam Husk Review Session -- <x> to exit, <SPC> to flip, <1-4> to answer";
-    
+
     // click all cloze hidden selectors
     document
       .querySelectorAll(".bp3-popover-target .rm-block__part--equals")
       .forEach(x => x.click());
   }
-
-  roamhusk.goToUid(roamhusk.cardsToReview[roamhusk.currentCard].uid);
 };
 
 roamhusk.download = (filename, text) => {
@@ -801,6 +648,7 @@ roamhusk.onFile = e => {
 };
 
 roamhusk.wrapUp = () => {
+  roamhusk.active = false;
   console.log("End of play, returning to ", roamhusk.originalURL);
 
   document.removeEventListener("keyup", roamhusk.processKey);
@@ -812,9 +660,43 @@ roamhusk.wrapUp = () => {
     roamhusk.styleSheet.deleteRule(0);
     roamhusk.styleSheet.deleteRule(0);
     roamhusk.styleSheet.deleteRule(0);
+    roamhusk.styleSheet.deleteRule(0);
   } catch (e) {
     console.warn("Could not delete stylesheet", e);
   }
+};
+
+// b to block, 1-4 to answer (1=forgot, 4=easy)
+roamhusk.processAnswer = key => {
+  // if no more cards
+  if (!roamhusk.cardsToReview[roamhusk.currentCard]) {
+    roamhusk.wrapUp();
+    return;
+  }
+  const uid = roamhusk.cardsToReview[roamhusk.currentCard].uid;
+  console.log("Before updating: ", roamhusk.nodes[uid]);
+
+  // disable card (block)
+  if (key === "b") {
+    roamhusk.nodes[uid] = { ...roamhusk.nodes[uid], blocked: true };
+  } else {
+    // process difficulty rating
+    roamhusk.nodes[uid] = roamhusk.enforceLimits(
+      roamhusk.addJitter(
+        roamhusk.getNewParameters(roamhusk.nodes[uid], parseInt(key, 10))
+      )
+    );
+  }
+
+  console.log("After responding ${parseInt(key, 10))}: ", roamhusk.nodes[uid]);
+  roamhusk.save();
+  roamhusk.currentCard += 1;
+  if (roamhusk.currentCard === roamhusk.cardsToReview.length) {
+    console.log("All cards due reviewed");
+    roamhusk.wrapUp();
+  }
+  roamhusk.showAnswer = false;
+  roamhusk.showCard();
 };
 
 roamhusk.processKey = e => {
@@ -824,9 +706,13 @@ roamhusk.processKey = e => {
     );
     return;
   }
-  if (e.keyCode === 32 && !roamhusk.showAnswer) {
-    roamhusk.showAnswer = true;
-    roamhusk.showCard();
+  if (e.keyCode === 32) {
+    if (roamhusk.showAnswer) {
+      roamhusk.processAnswer(roamhusk.defaultAnswer);
+    } else {
+      roamhusk.showAnswer = true;
+      roamhusk.showCard();
+    }
   } else if (
     e.key === "1" ||
     e.key === "2" ||
@@ -835,32 +721,8 @@ roamhusk.processKey = e => {
     e.key === "0" ||
     e.key === "b"
   ) {
-    const uid = roamhusk.cardsToReview[roamhusk.currentCard].uid;
-    console.log(roamhusk.nodes[uid]);
-
-    // disable card (block)
-    if (e.key === "b") {
-      roamhusk.nodes[uid] = { ...roamhusk.nodes[uid], blocked: true };
-    } else {
-      // process difficulty rating
-      roamhusk.nodes[uid] = roamhusk.enforceLimits(
-        roamhusk.addJitter(
-          roamhusk.getNewParameters(roamhusk.nodes[uid], parseInt(e.key, 10))
-        )
-      );
-    }
-
-    console.log(roamhusk.nodes[uid], parseInt(e.key, 10));
-    roamhusk.save();
-    roamhusk.currentCard += 1;
-    if (roamhusk.currentCard === roamhusk.cardsToReview.length) {
-      console.log("All cards due reviewed");
-      roamhusk.wrapUp();
-    }
-    roamhusk.showAnswer = false;
-    roamhusk.showCard();
+    roamhusk.processAnswer(e.key);
   } else if (e.key === "x") {
-    roamhusk.active = false;
     roamhusk.wrapUp();
   } else if (e.key === "d") {
     roamhusk.downloadNodes();
