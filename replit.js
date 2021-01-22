@@ -494,7 +494,7 @@ roamhusk.formatNode = node =>
   `F: ${roamhusk.fixedLength(node.factor, 4)}  I: ${roamhusk.fixedLength(
     node.interval,
     4
-  )}  D: ${roamhusk.fixedLength(roamhusk.toUSDate(node.due), 12)} ${
+  )}  D: ${roamhusk.fixedLength(roamhusk.toUSDate(new Date(node.due)), 12)} ${
     node.uid
   }: ${roamhusk.fixedLength(node.string, 80)}`;
 
@@ -688,7 +688,7 @@ roamhusk.processAnswer = key => {
     );
   }
 
-  console.log("After responding ${parseInt(key, 10))}: ", roamhusk.nodes[uid]);
+  console.log(`After responding ${parseInt(key, 10))}: `, roamhusk.nodes[uid]);
   roamhusk.save();
   roamhusk.currentCard += 1;
   if (roamhusk.currentCard === roamhusk.cardsToReview.length) {
