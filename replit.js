@@ -1,17 +1,16 @@
-
 if (!window.roamhusk) {
   window.roamhusk = {};
 }
 
 // Remove element by id
-roamhusk.removeId = (id) => {
+roamhusk.removeId = id => {
   let element = document.getElementById(id);
   if (element) element.remove();
-}
+};
 
 // Add element to target
 roamhusk.addElement = (element, target) => {
-  if (element.id) roamhusk.removeId(element.id)
+  if (element.id) roamhusk.removeId(element.id);
   target.appendChild(element);
 };
 
@@ -319,6 +318,7 @@ roamhusk.addElement(
 
 // Go to uid
 roamhusk.goToUid = uid => {
+  console.log("Going to uid", uid);
   let baseUrl =
     "/" +
     new URL(window.location.href).hash
@@ -347,7 +347,6 @@ var toggleModeButton = Object.assign(document.createElement("div"), {
 });
 toggleModeButton.style.cssText =
   "height: 24px; width: 24px; cursor: pointer; display: grid; place-content: center; gap: 1ch;";
-
 
 roamhusk.addElement(
   toggleModeButton,
@@ -486,26 +485,34 @@ roamhusk.formatNode = node =>
   `F: ${roamhusk.fixedLength(node.factor, 4)}  I: ${roamhusk.fixedLength(
     node.interval,
     4
-  )}  D: ${roamhusk.fixedLength(roamhusk.toUSDate(new Date(node.due)), 12)} ${
+  )}  D: ${roamhusk.fixedLength(roamhusk.toUSDate(node.due), 12)} ${
     node.uid
   }: ${roamhusk.fixedLength(node.string, 80)}`;
 
 roamhusk.getSortedDueCards = () => {
   const today = new Date();
+  const yesterday = roamhusk.addDays(today, -1);
   let todaysCards = [];
+  let yesterdaysCards = [];
   const overdueCards = Object.values(roamhusk.nodes)
     .filter(x => {
       if (x.blocked || x.disabled) {
         return false;
       }
-      if (roamhusk.sameDay(new Date(x.due), today)) {
+      if (roamhusk.sameDay(x.due, today)) {
         todaysCards.push(x);
+        return false;
+      } else if (roamhusk.sameDay(x.due, yesterday)) {
+        yesterdaysCards.push(x);
         return false;
       } else {
         return true;
       }
     })
-    .filter(x => new Date(x.due) < today);
+    .filter(x => x.due < today);
+  console.groupCollapsed("Yesterday's cards");
+  yesterdaysCards.forEach(x => console.log(roamhusk.formatNode(x)));
+  console.groupEnd();
   console.groupCollapsed("Today's cards");
   todaysCards.forEach(x => console.log(roamhusk.formatNode(x)));
   console.groupEnd();
@@ -513,7 +520,9 @@ roamhusk.getSortedDueCards = () => {
   roamhusk.shuffle(overdueCards);
   overdueCards.forEach(x => console.log(roamhusk.formatNode(x)));
   console.groupEnd();
-  roamhusk.cardsToReview = todaysCards.concat(overdueCards);
+  roamhusk.cardsToReview = yesterdaysCards.concat(
+    todaysCards.concat(overdueCards)
+  );
   if (roamhusk.cardsToReview.length === 0) {
     window.alert("No due or overdue cards, come back tomorrow");
     roamhusk.wrapUp();
@@ -602,7 +611,10 @@ roamhusk.download = (filename, text) => {
 
 roamhusk.downloadNodes = () => {
   console.log("preparing for download");
-  roamhusk.download("roamhusk-backup.json", JSON.stringify(roamhusk.nodes));
+  roamhusk.download(
+    `roamhusk-backup-${toUSDate(new Date())}.json`,
+    JSON.stringify(roamhusk.nodes)
+  );
 };
 
 roamhusk.uploadNodes = () => {
@@ -626,6 +638,9 @@ roamhusk.onFile = e => {
     try {
       newNodes = JSON.parse(reader.result);
       if (Object.values(newNodes)[0].interval) {
+        Object.keys(newNodes).forEach(x => {
+          newNodes[x].due = new Date(newNodes[x].due);
+        });
         roamhusk.nodes = newNodes;
         roamhusk.save();
         console.log(`Successfully loaded ${newNodes.length} nodes`);
@@ -745,4 +760,3 @@ roamhusk.enforceLimits = node => {
 window.onbeforeunload = () => {
   roamhusk.hasEventListener = null;
 };
-
