@@ -185,6 +185,7 @@ roamhusk.getParamsFromGraph = () => {
   roamhusk.hidePathTag = roamhusk.getSetting("hidePathTag") || "sr";
   roamhusk.showPathTag = roamhusk.getSetting("showPathTag") || "srt";
   roamhusk.answerPathTag = roamhusk.getSetting("answerPathTag") || "sra";
+  roamhusk.fractalInquiryTag = roamhusk.getSetting("fractalInquiryTag") || "fi";
   roamhusk.defaultAnswer = roamhusk.getSetting("defaultAnswer") || "3";
   roamhusk.includeRoamToolkit = roamhusk.getSetting("includeRoamToolkit");
 
@@ -194,7 +195,8 @@ roamhusk.getParamsFromGraph = () => {
     showPathTag: roamhusk.showPathTag,
     answerPathTag: roamhusk.answerPathTag,
     includeRoamToolkit: roamhusk.includeRoamToolkit,
-    defaultAnswer: roamhusk.defaultAnswer
+    defaultAnswer: roamhusk.defaultAnswer,
+    fractalInquiryTag: roamhusk.fractalInquiryTag
   });
 };
 
@@ -318,7 +320,6 @@ roamhusk.addElement(
 
 // Go to uid
 roamhusk.goToUid = uid => {
-  console.log("Going to uid", uid);
   let baseUrl =
     "/" +
     new URL(window.location.href).hash
@@ -326,7 +327,16 @@ roamhusk.goToUid = uid => {
       .slice(0, 3)
       .join("/");
   let url = uid ? baseUrl + "/page/" + uid : baseUrl;
+  console.log("Going to uid", uid, url);
   location.assign(url);
+
+  // sometimes changing URL doesn't "stick" so retry
+  window.setTimeout(() => {
+    if (!window.location.href === url) {
+      console.log("Trying to set URL second time");
+      window.location.assign(url);
+    }
+  }, 100);
 };
 
 // Adding buttons to the topbar
@@ -368,6 +378,9 @@ roamhusk.getNodes = () => {
   }
   if (roamhusk.answerPathTag) {
     searchTags.push(roamhusk.answerPathTag);
+  }
+  if (roamhusk.fractalInquiryTag) {
+    searchTags.push(roamhusk.fractalInquiryTag);
   }
   let searchQuery = searchTags.map(x => ` [?srPage :node/title "${x}"]`);
 
@@ -534,6 +547,7 @@ roamhusk.getSortedDueCards = () => {
 roamhusk.showPathForCard = (card, showAnswer) => {
   let string = card.string + " ";
   let showPath =
+    string.includes("#" + roamhusk.fractalInquiryTag + " ") ||
     !roamhusk.defaultHidePath ||
     string.includes("#" + roamhusk.showPathTag + " ") ||
     (showAnswer && string.includes("#" + roamhusk.answerPathTag + " "));
@@ -544,14 +558,35 @@ roamhusk.showPathForCard = (card, showAnswer) => {
 };
 
 roamhusk.showCard = () => {
-  let currentCard = roamhusk.cardsToReview[roamhusk.currentCard];
+  if (!roamhusk.active) {
+    return;
+  }
+  const currentCard = roamhusk.cardsToReview[roamhusk.currentCard];
+  const string = currentCard.string + " ";
+
+  // go straight to answer if fractal inquiry, otherwise question
+  if (string.includes("#" + roamhusk.fractalInquiryTag + " ")) {
+    console.log("fractal", string);
+    roamhusk.showAnswer = true;
+    roamhusk.styleSheet.deleteRule(1);
+    roamhusk.styleSheet.insertRule(
+      `.roam-main .roam-topbar { background-color: #acdeac !important }`,
+      1
+    );
+  } else {
+    roamhusk.styleSheet.deleteRule(1);
+    roamhusk.styleSheet.insertRule(
+      `.roam-main .roam-topbar { background-color: lightblue !important }`,
+      1
+    );
+  }
 
   // no more cards
   if (!currentCard) {
     roamhusk.wrapUp();
     return;
   }
-  let showPath = roamhusk.showPathForCard(currentCard, roamhusk.showAnswer);
+  const showPath = roamhusk.showPathForCard(currentCard, roamhusk.showAnswer);
   // if always show, or the tag that asks us to show, or answer if the tag that asks to show in answer
 
   try {
@@ -612,7 +647,7 @@ roamhusk.download = (filename, text) => {
 roamhusk.downloadNodes = () => {
   console.log("preparing for download");
   roamhusk.download(
-    `roamhusk-backup-${toUSDate(new Date())}.json`,
+    `roamhusk-backup-${roamhusk.toUSDate(new Date())}.json`,
     JSON.stringify(roamhusk.nodes)
   );
 };
@@ -644,6 +679,8 @@ roamhusk.onFile = e => {
         roamhusk.nodes = newNodes;
         roamhusk.save();
         console.log(`Successfully loaded ${newNodes.length} nodes`);
+        roamhusk.currentCard = 0;
+        roamhusk.cardsToReview = roamhusk.getSortedDueCards();
       } else {
         console.error(`Failed parsing`, newNodes);
       }
@@ -695,7 +732,7 @@ roamhusk.processAnswer = key => {
     );
   }
 
-  console.log("After responding ${parseInt(key, 10))}: ", roamhusk.nodes[uid]);
+  console.log(`After responding ${parseInt(key, 10)}: `, roamhusk.nodes[uid]);
   roamhusk.save();
   roamhusk.currentCard += 1;
   if (roamhusk.currentCard === roamhusk.cardsToReview.length) {
