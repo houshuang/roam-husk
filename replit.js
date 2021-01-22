@@ -188,6 +188,7 @@ roamhusk.getParamsFromGraph = () => {
   roamhusk.fractalInquiryTag = roamhusk.getSetting("fractalInquiryTag") || "fi";
   roamhusk.defaultAnswer = roamhusk.getSetting("defaultAnswer") || "3";
   roamhusk.includeRoamToolkit = roamhusk.getSetting("includeRoamToolkit");
+  roamhusk.shouldRemoveInterval = roamhusk.getSetting("removeInterval");
 
   console.log("Settings", {
     defaultHidePath: roamhusk.defaultHidePath,
@@ -196,7 +197,8 @@ roamhusk.getParamsFromGraph = () => {
     answerPathTag: roamhusk.answerPathTag,
     includeRoamToolkit: roamhusk.includeRoamToolkit,
     defaultAnswer: roamhusk.defaultAnswer,
-    fractalInquiryTag: roamhusk.fractalInquiryTag
+    fractalInquiryTag: roamhusk.fractalInquiryTag,
+    removeInterval: roamhusk.shouldRemoveInterval
   });
 };
 
@@ -249,13 +251,7 @@ roamhusk.parseNodes = nodes => {
     const rawFactor = str.match(/\[\[\[\[factor\]\]\:(.+?)\]\]/);
     const rawDate = str.match(roamhusk.dateRegex);
     str = str
-      .replace(/\[\[\[\[interval\]\]\:(.+?)\]\]/g, "")
-      .replace(/\[\[\[\[factor\]\]\:(.+?)\]\]/g, "")
-      .replace(roamhusk.dateRegex, "")
       .trim();
-    if (str.match("Elin") || str.match("David")) {
-      return;
-    }
     // preserve existing metadata
     if (roamhusk.nodes[node[0]]) {
       newNodes[node[0]].disabled = false;
@@ -335,7 +331,7 @@ roamhusk.goToUid = uid => {
     if (!window.location.href === url) {
       console.log("Trying to set URL second time");
       window.location.assign(url);
-    }
+    } else { console.log('Arrived')}
   }, 100);
 };
 
@@ -557,12 +553,29 @@ roamhusk.showPathForCard = (card, showAnswer) => {
   return showPath;
 };
 
+roamhusk.removeInterval = (str, uid) => {
+  const newStr =
+    str
+      .replace(/\[\[\[\[interval\]\]\:(.+?)\]\]/g, "")
+      .replace(/\[\[\[\[factor\]\]\:(.+?)\]\]/g, "")
+      .replace(roamhusk.dateRegex, "")
+      .trim() +
+    " #" +
+    roamhusk.hidePathTag;
+
+  console.log("Replacing ", str, " -> ", newStr);
+  roamAlphaAPI.updateBlock({ block: { uid, string: newStr } });
+};
+
 roamhusk.showCard = () => {
   if (!roamhusk.active) {
     return;
   }
   const currentCard = roamhusk.cardsToReview[roamhusk.currentCard];
   const string = currentCard.string + " ";
+  if (string.includes("[[interval]]") && roamhusk.shouldRemoveInterval) {
+    roamhusk.removeInterval(string, currentCard.uid);
+  }
 
   // go straight to answer if fractal inquiry, otherwise question
   if (string.includes("#" + roamhusk.fractalInquiryTag + " ")) {
