@@ -1,28 +1,19 @@
-console.log("Loading roam-husk.js.");
-
-// waitForElm = selector => {
-//  return new Promise(resolve => {
-//    if (document.querySelector(selector)) {
-//      return resolve(document.querySelector(selector));
-//    }
-
-//    const observer = new MutationObserver(mutations => {
-//      if (document.querySelector(selector)) {
-//        resolve(document.querySelector(selector));
-//        observer.disconnect();
-//      }
-//    });
-
-//    observer.observe(document.body, {
-//      childList: true,
-//      subtree: true
-//    });
-//  });
-// };
 
 if (!window.roamhusk) {
   window.roamhusk = {};
 }
+
+// Remove element by id
+roamhusk.removeId = (id) => {
+  let element = document.getElementById(id);
+  if (element) element.remove();
+}
+
+// Add element to target
+roamhusk.addElement = (element, target) => {
+  if (element.id) roamhusk.removeId(element.id)
+  target.appendChild(element);
+};
 
 // reads a setting attribute from graph, also converts booleans
 roamhusk.getSetting = settingTitle => {
@@ -357,6 +348,7 @@ var toggleModeButton = Object.assign(document.createElement("div"), {
 toggleModeButton.style.cssText =
   "height: 24px; width: 24px; cursor: pointer; display: grid; place-content: center; gap: 1ch;";
 
+
 roamhusk.addElement(
   toggleModeButton,
   document.querySelector(".roam-topbar .flex-h-box")
@@ -688,7 +680,7 @@ roamhusk.processAnswer = key => {
     );
   }
 
-  console.log(`After responding ${parseInt(key, 10))}: `, roamhusk.nodes[uid]);
+  console.log("After responding ${parseInt(key, 10))}: ", roamhusk.nodes[uid]);
   roamhusk.save();
   roamhusk.currentCard += 1;
   if (roamhusk.currentCard === roamhusk.cardsToReview.length) {
@@ -753,3 +745,4 @@ roamhusk.enforceLimits = node => {
 window.onbeforeunload = () => {
   roamhusk.hasEventListener = null;
 };
+
