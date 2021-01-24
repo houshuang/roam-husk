@@ -1,0 +1,25 @@
+ cat cuid.js rss-parser-min.js roam-rss.js |pbcopy
+
+
+ These blocks must be somewhere in graph
+
+ - [[roam/rss/feeds]]
+    - https://astralcodexten.substack.com/feed
+    - http://reganmian.net/blog/feed/index.xml
+    - http://networkedthought.substack.com/feed
+- [[roam/rss/feedReader]]
+
+
+(output is put under feedReader)
+
+here is JS code to load 
+
+const roamSRIDRSS = "roamsrrss-script";
+const existingRoamSRRSS = document.getElementById(roamSRIDRSS);
+if(existingRoamSRRSS) document.getElementsByTagName('head')[0].removeChild(existingRoamSRRSS);
+var s = document.createElement('script');
+	s.type = "text/javascript";
+	s.id = roamSRIDRSS;
+    s.src =  "https://roam-husk-1.stianhaklev.repl.co/roamrss.js";
+  	s.async = true;
+document.getElementsByTagName('head')[0].appendChild(s);
