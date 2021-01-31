@@ -309,7 +309,7 @@ var refreshButton = Object.assign(document.createElement("div"), {
 // Comment/uncomment here for debugging
 roamhusk.addElement(
   refreshButton,
-  document.querySelector(".roam-topbar .flex-h-box")
+  document.querySelector(".rm-topbar")
 );
 
 // --- Main helper functions ---
@@ -356,7 +356,7 @@ toggleModeButton.style.cssText =
 
 roamhusk.addElement(
   toggleModeButton,
-  document.querySelector(".roam-topbar .flex-h-box")
+  document.querySelector(".rm-topbar")
 );
 
 // Make Alt+D leave review mode
@@ -421,7 +421,7 @@ roamhusk.turnOnCss = () => {
     0
   );
   roamhusk.styleSheet.insertRule(
-    `.roam-main .roam-topbar { background-color: lightblue !important }`,
+    `.roam-main .rm-topbar { background-color: lightblue !important }`,
     1
   );
   roamhusk.styleSheet.insertRule(
@@ -583,13 +583,13 @@ roamhusk.showCard = () => {
     roamhusk.showAnswer = true;
     roamhusk.styleSheet.deleteRule(1);
     roamhusk.styleSheet.insertRule(
-      `.roam-main .roam-topbar { background-color: #acdeac !important }`,
+      `.roam-main .rm-topbar { background-color: #acdeac !important }`,
       1
     );
   } else {
     roamhusk.styleSheet.deleteRule(1);
     roamhusk.styleSheet.insertRule(
-      `.roam-main .roam-topbar { background-color: lightblue !important }`,
+      `.roam-main .rm-topbar { background-color: lightblue !important }`,
       1
     );
   }
